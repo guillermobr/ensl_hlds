@@ -1,4 +1,4 @@
-FROM ubuntu:xenial AS Ubuntu_SteamCMD
+FROM ubuntu:xenial AS ubuntu_steamcmd
 
 # Get Package Dependencies, Accept ToS with Steam Dependency, clear appt cache
 RUN dpkg --add-architecture i386 && \
@@ -24,7 +24,7 @@ RUN useradd -m steam
 USER steam
 WORKDIR /home/steam
 
-FROM Ubuntu_SteamCMD AS SteamCMD_HLDS
+FROM ubuntu_steamcmd AS steamcmd_hlds
 
 RUN mkdir -p /home/steam/hlds/steamapps/
 
@@ -43,24 +43,27 @@ RUN printf "quit\nquit\n"|/usr/games/steamcmd +login anonymous +force_install_di
 RUN mkdir -p ~/.steam/sdk32 && ln -s ~/.steam/steamcmd/linux32/steamclient.so ~/.steam/sdk32/steamclient.so && \
     rm -f ~/hlds/libstdc*.so
 
-COPY scripts/*.sh /home/steam/hlds/
+COPY --chown=steam scripts/*.sh /home/steam/hlds/
+RUN chmod +x /home/steam/hlds/*.sh && \
+    # Convert Windows line endings to Unix line endings
+    sed -i 's/\r$//' /home/steam/hlds/*.sh
 
-FROM SteamCMD_HLDS AS HLDS_NS
+FROM steamcmd_hlds AS hlds_ns
 
-ARG NS_URL='https://github.com/ENSL/NS/releases/download/v3.2.2/ns_v322_full.zip'
+ARG NS_URL='https://github.com/ENSL/NS/releases/download/v3.3b9/ns_v33b9_full.zip'
 
 WORKDIR /home/steam/hlds
 
 COPY --chown=steam files/ns.sha /home/steam/hlds
 
 # NS bug workaround. Since NS links to a GCC which is not included in the steam-provided libstdc++:i386
-RUN mv /home/steam/hlds/libstdc++* /home/steam/ && \
+RUN mv /home/steam/hlds/libstdc++* /home/steam/ 2>/dev/null || true && \
     # Install NS
     wget "$NS_URL" && \
     unzip ns_*.zip && \
     cp /home/steam/hlds/ns/liblist.gam /home/steam/hlds/ns/liblist.bak
 
-FROM HLDS_NS AS HLDS_ENSL
+FROM hlds_ns AS hlds_ensl
 
 ARG PLUGIN_URL='https://github.com/ENSL/ensl-plugin/releases/download/1.4-extra/ENSL_SrvPkg-1.4-extra.zip'
 
@@ -83,7 +86,7 @@ WORKDIR /home/steam/hlds
 
 # VAC Service
 EXPOSE 26900 \
-    # HLDS 
+    # HLDS
     27016 \
     # HLDS RCON
     27016/udp \
@@ -91,4 +94,4 @@ EXPOSE 26900 \
     27020
 
 # ENTRYPOINT ["/bin/bash"]
-ENTRYPOINT ["/home/steam/hlds/entry.sh"]
+CMD ["/bin/bash", "-c", "if [ -f /home/steam/hlds/entry.sh ]; then /home/steam/hlds/entry.sh; else echo 'entry.sh not found, starting bash'; /bin/bash; fi"]
